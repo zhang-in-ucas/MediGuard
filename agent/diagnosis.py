@@ -118,7 +118,7 @@ def diagnosis_node(state: dict) -> dict:
     else:
         rag_context = ""
         try:
-            with Timer("RAG检索", logger=logger):
+            with Timer("RAG检索", logger=logger, level=20):  # INFO级别，控制台可见
                 rag_context = retrieve_context(state["user_input"])
         except Exception as e:
             logger.warning(f"RAG检索失败 error={e}")
