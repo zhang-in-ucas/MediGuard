@@ -86,7 +86,7 @@ def format_output(state: dict) -> dict:
 
     # 对话结束，保存记忆
     try:
-        from agent.memory import save_session_summary
+        from memory import save_session_summary
         save_session_summary(
             user_input=state.get("user_input", ""),
             final_response=final,

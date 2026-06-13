@@ -9,6 +9,7 @@ class AgentState(TypedDict):
     rag_context: str
     is_safe: bool
     safety_reason: str
+    safety_history: List[str]  # 累积所有安全审查的拦截原因（用于评测拆解防线）
     retry_count: int
     final_response: str
     chat_history: List[str]
