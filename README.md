@@ -65,33 +65,30 @@ flowchart TD
     B --> B20["top-20"]
     V20 --> RRF["RRF 融合<br/>k=60"]
     B20 --> RRF
-    RRF --> R["Rerank 重排序<br/>gte-rerank-v2"]
+    RRF --> R["Rerank 重排序<br/>qwen3-rerank"]
     R --> T3["top-3"]
     T3 --> D["问诊节点"]
 ```
 
-知识库包含三个数据源：
-1. **shibing624/medical**：通用医疗QA数据集，自动从HuggingFace镜像下载
-2. **Chinese-medical-dialogue-data**：79万条真实医患对话（6个科室）
-3. **内置安全知识**：15条用药安全QA（发热、高血压、抗生素、安眠药等常见场景）
+知识库使用双数据源：**shibing624/medical**（通用医疗QA知识） + **Chinese-medical-dialogue-data**（真实医患对话，覆盖男科、内科、妇产科、肿瘤科、儿科、外科6个科室），默认共加载 60,000 条。入库支持断点续传。
 
 ### 双层安全审查系统
 
 | 层次 | 方法 | 成本 | 拦截内容 |
 |------|------|------|----------|
-| **第一层：关键词拦截** | 26个触发短语，确定性匹配 | 零LLM成本 | 显性违规：开处方、下诊断、给剂量、劝阻就医 |
+| **第一层：关键词拦截** | 35个触发短语，确定性匹配 | 零LLM成本 | 显性违规：开处方、下诊断、给剂量、劝阻就医 |
 | **第二层：LLM审查** | 独立 `qwen-plus` (temperature=0.1) | 1次API调用 | 语义边缘案例、软性越界、模糊表述 |
 
 **违规分为两级**：
 - **一类违规（一票否决）**：处方级行为、诊断替代、治疗方案、劝阻就医、首诊越权 → 直接拦截
 - **二类风险（观察项）**：边缘剂量暗示、信息真实性存疑、过度承诺 → 2项以上或高显著性 → 拦截
 
-### 双层记忆系统
+### 双层记忆
 
 | 类型 | 存储 | 容量 | 机制 |
 |------|------|------|------|
-| **中期记忆** | JSON文件 | 最近10次对话 | 完整对话记录，快速回溯 |
-| **长期记忆** | ChromaDB向量库 | 理论上无限 | LLM摘要 → 嵌入 → 语义检索召回 |
+| **短期记忆** | AgentState `chat_history` | 全部对话历史 | 全量注入 prompt |
+| **长期记忆** | ChromaDB向量库 | 理论上无限 | 每轮对话LLM提取一句摘要追加，语义检索召回 |
 
 ---
 
@@ -111,9 +108,13 @@ cp .env.example .env
 # 编辑 .env 文件：DASHSCOPE_API_KEY=你的key
 ```
 
-### 构建知识库（首次使用，约需10分钟）
+### 构建知识库（首次使用）
 
 ```bash
+# 如需使用医患对话数据，先克隆数据集到项目目录
+git clone https://github.com/Toyhom/Chinese-medical-dialogue-data.git
+
+# 构建向量库（shibing624/medical 10K + 医患对话 50K，约 60K 条）
 python -m rag.ingest
 ```
 
@@ -182,14 +183,13 @@ MediGuard/
 │   ├── diagnosis.py                # 问诊节点：RAG检索 + 记忆召回 + 合规提示词（~100行法规约束）
 │   └── safety.py                   # 双层安全审查：关键词扫描 + LLM法规审查
 │
-├── memory/                         # 双层记忆（替代了旧的 agent/memory.py）
-│   ├── __init__.py                 # 统一入口：save_session_summary()
-│   ├── short_term.py               # 中期记忆：JSON文件存储最近10次对话
-│   └── long_term.py                # 长期记忆：ChromaDB向量库存储对话摘要
+├── memory/                         # 双层记忆
+│   ├── __init__.py                 # 统一入口：save_summary(), recall_memory()
+│   └── long_term.py                # 长期记忆：ChromaDB向量库存储每轮对话摘要，语义检索
 │
 ├── rag/                            # RAG检索引擎
 │   ├── embeddings.py               # DashScope嵌入模型适配器（LangChain接口）
-│   ├── ingest.py                   # 知识库构建：3个数据源 + ChromaDB入库
+│   ├── ingest.py                   # 知识库构建：shibing624/medical + Chinese-medical-dialogue-data
 │   └── retriever.py                # 混合检索：向量 + BM25 → RRF融合 → Rerank重排序
 │
 ├── api/                            # Web接口
@@ -228,7 +228,7 @@ MediGuard/
 
 ### 安全关键词说明
 
-`SAFETY_KEYWORDS` 在 `config.py` 中定义，分为5组：
+`SAFETY_KEYWORDS` 在 `config.py` 中定义，分为4组：
 - **处方类**：开处方、推荐吃药、制定治疗方案等
 - **诊断替代类**：确诊为、您患有、您得了等
 - **剂量类**：建议服用、mg每日、一天3次等
@@ -250,7 +250,7 @@ python -m evaluation.safety_harness --verbose
 | 向量库 | ChromaDB | RAG知识库 + 长期记忆存储 |
 | 嵌入 | text-embedding-v3 | 文档向量化 |
 | BM25 | rank_bm25 + jieba | 关键词检索 |
-| 重排序 | gte-rerank-v2 | RRF融合后精排 |
+| 重排序 | qwen3-rerank | RRF融合后精排 |
 | Web服务 | FastAPI + Gradio | REST API + 网页聊天界面 |
 | 日志 | Python logging + ContextVar | trace_id全链路追踪 |
 

@@ -128,52 +128,23 @@ def load_chinese_medical_dialogue(data_dir=None, max_items=50000):
     return documents
 
 
-def load_safety_knowledge():
-    """内置医疗安全知识（关键词检索的补充）"""
-    safety_docs = [
-        Document(
-            page_content="问：发烧可以自己吃退烧药吗\n答：发热是身体的防御反应，体温38.5℃以下可先物理降温。如需用药，对乙酰氨基酚或布洛芬是常用退烧药，但必须遵医嘱或严格按说明书剂量使用，切勿自行增加剂量或联合使用多种退烧药。持续发热超过3天应及时就医。"),
-        Document(
-            page_content="问：头痛可以长期吃止痛药吗\n答：不建议长期自行服用止痛药。布洛芬等NSAIDs长期使用可能引起胃肠道损伤、肾功能损害。头痛持续应就医查明原因，而非依赖止痛药掩盖症状。"),
-        Document(
-            page_content="问：孩子发烧38.5度怎么办\n答：儿童发热38.5℃建议先物理降温，如温水擦浴、减少衣物。如需用药须遵医嘱，儿童退烧药剂量需按体重计算，不可使用成人剂量。3个月以下婴儿发热应立即就医。"),
-        Document(
-            page_content="问：高血压可以自己买降压药吃吗\n答：高血压用药需医生根据个体情况选择，不同类型降压药适用不同人群。自行用药可能导致血压控制不当或药物不良反应。请至心内科就诊，在医生指导下规范用药。"),
-        Document(
-            page_content="问：糖尿病感觉好转可以停药吗\n答：不可以自行停药。血糖正常可能是药物控制的结果，停药后血糖可能反弹。应在医生指导下调整用药方案，定期监测血糖。"),
-        Document(
-            page_content="问：感冒了需要吃抗生素吗\n答：普通感冒多由病毒引起，抗生素对病毒无效，不应自行服用。滥用抗生素可能导致耐药性和不良反应。如出现持续高热、脓性痰等细菌感染迹象，应就医检查后遵医嘱用药。"),
-        Document(
-            page_content="问：失眠可以长期吃安眠药吗\n答：安眠药不宜长期自行服用，可能产生依赖性和耐受性。失眠应先从改善睡眠习惯入手，如规律作息、减少咖啡因摄入等。持续失眠建议就医，在医生指导下治疗。"),
-        Document(
-            page_content="问：皮肤过敏自己买药膏涂可以吗\n答：皮肤过敏应先明确过敏原。外用药膏尤其是含激素类药物，需在医生指导下使用，自行长期使用可能引起皮肤萎缩等不良反应。反复过敏建议就诊皮肤科。"),
-        Document(
-            page_content="问：胃疼吃奥美拉唑可以吗\n答：奥美拉唑是处方药，需在医生诊断后使用。胃痛原因多样，自行用药可能掩盖病情。建议消化内科就诊，明确是溃疡、胃炎还是其他原因后遵医嘱治疗。"),
-        Document(
-            page_content="问：拉肚子吃诺氟沙星可以吗\n答：诺氟沙星是处方类抗生素，对病毒性腹泻无效。急性腹泻多为自限性，以补液防脱水为主。18岁以下人群禁用诺氟沙星。腹泻持续或伴发热应就医，不要自行服用抗生素。"),
-        Document(
-            page_content="问：焦虑症发作吃什么药\n答：焦虑症需精神心理科专业评估，药物治疗应在精神科医生指导下进行。抗焦虑药物有多种类型，需根据症状严重程度和个体情况选择，切勿自行购药服用。"),
-        Document(
-            page_content="问：月经不调自己买药调理可以吗\n答：月经不调原因复杂，包括内分泌失调、妇科炎症、器质性病变等，需要医生检查明确原因后针对性治疗。自行服药可能延误诊断，建议妇科就诊。"),
-        Document(
-            page_content="问：腰疼吃止痛药就行吗\n答：腰痛原因多样，包括肌肉劳损、椎间盘突出、肾脏疾病等。止痛药只能缓解症状不能治本，长期服用还有胃肠道和肾脏风险。腰痛持续或加重应就医检查。"),
-        Document(
-            page_content="问：咳嗽一周了还没好怎么办\n答：咳嗽超过一周未愈应就医，需排除肺炎、支气管炎等疾病。不要自行购买止咳药长期服用，特别是含可待因的止咳药。咳嗽是排痰保护机制，盲目止咳可能加重感染。"),
-        Document(
-            page_content="问：胸闷气短是怎么回事\n答：胸闷气短可能涉及心脏或呼吸系统问题，如冠心病、心律失常、哮喘等，属于需要重视的症状。建议及时就医，心内科或呼吸科检查，不要自行判断或用药。"),
-    ]
-    print(f"内置安全知识 {len(safety_docs)} 条", flush=True)
-    return safety_docs
-
 
 def build_vectorstore(documents, rebuild=False):
     """构建Chroma向量库（分批入库，支持断点续传）"""
-    import shutil
+    import chromadb
     embeddings = DashScopeEmbeddings()
 
-    if rebuild and os.path.exists(RAG_PERSIST_DIR):
-        shutil.rmtree(RAG_PERSIST_DIR)
-        print(f"已删除旧向量库 {RAG_PERSIST_DIR}", flush=True)
+    # 先建立 ChromaDB 客户端
+    client = chromadb.PersistentClient(path=RAG_PERSIST_DIR)
+
+    if rebuild:
+        # 用 ChromaDB API 删除集合（避免 Windows 文件锁问题），
+        # 不要用 shutil.rmtree 直接删文件——SQLite 可能被其他进程锁定
+        try:
+            client.delete_collection(name="medical_knowledge")
+            print(f"已删除旧集合 medical_knowledge", flush=True)
+        except Exception:
+            print(f"集合 medical_knowledge 不存在，无需删除", flush=True)
 
     # 去重
     seen = set()
@@ -187,13 +158,20 @@ def build_vectorstore(documents, rebuild=False):
     total = len(unique_docs)
     print(f"去重后 {total} 条文档，开始向量化...", flush=True)
 
-    # 检查已有向量库（断点续传）
+    # 创建 langchain_chroma 向量库实例
+    from langchain_chroma import Chroma
     vectorstore = Chroma(
-        persist_directory=RAG_PERSIST_DIR,
-        embedding_function=embeddings,
+        client=client,
         collection_name="medical_knowledge",
+        embedding_function=embeddings,
     )
-    existing_count = vectorstore._collection.count()
+
+    # 检查已有向量库条数（断点续传）
+    try:
+        collection = client.get_collection(name="medical_knowledge")
+        existing_count = collection.count()
+    except Exception:
+        existing_count = 0
     start_idx = existing_count
     print(f"已有 {existing_count} 条，从第 {start_idx} 条继续", flush=True)
 
@@ -216,7 +194,8 @@ def build_vectorstore(documents, rebuild=False):
                 print(f"  [{i}/{total}] 重试也失败: {e2}，跳过此批次", flush=True)
                 continue
 
-    count = vectorstore._collection.count()
+    collection = client.get_collection(name="medical_knowledge")
+    count = collection.count()
     print(f"向量库已保存到 {RAG_PERSIST_DIR}，共 {count} 条", flush=True)
     return vectorstore
 
@@ -230,16 +209,16 @@ if __name__ == "__main__":
     # 数据源2：Chinese-medical-dialogue-data（真实医患对话）
     all_docs.extend(load_chinese_medical_dialogue(max_items=50000))
 
-    # 数据源3：内置安全知识
-    all_docs.extend(load_safety_knowledge())
-
     print(f"\n共加载 {len(all_docs)} 条文档", flush=True)
 
     # 重建向量库
     build_vectorstore(all_docs, rebuild=True)
 
+    # 预构建BM25缓存（避免首次检索时的延迟）
+    from rag.retriever import retrieve_context, prebuild_bm25_index
+    prebuild_bm25_index(force=True)
+
     # 验证
-    from rag.retriever import retrieve_context
 
     print("\n--- 验证检索 ---")
     for q in ["头痛怎么办", "发烧38.5度吃什么药", "高血压用药", "感冒了多喝水有用吗", "儿科发烧"]:

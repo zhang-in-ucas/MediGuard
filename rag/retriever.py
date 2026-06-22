@@ -1,14 +1,12 @@
 """RAG检索器：Hybrid Search (向量+BM25) + Rerank重排序"""
 
-import jieba
-jieba.setLogLevel(jieba.logging.INFO)  # 压掉 jieba 的 stdout 噪音
-
 import os
 import sys
 import pickle
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import jieba
 import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -16,12 +14,12 @@ from config import RAG_PERSIST_DIR, EMBEDDING_MODEL, RAG_TOP_K, DASHSCOPE_API_KE
 from rag.embeddings import DashScopeEmbeddings
 from utils.logger import get_logger
 
+# 转绝对路径，避免不同 cwd 连接到不同数据库
+RAG_PERSIST_DIR = os.path.abspath(RAG_PERSIST_DIR)
+
 logger = get_logger(__name__)
 
-# 将相对路径转为绝对路径（基于项目根目录），避免 chromadb.PersistentClient 和
-# langchain_chroma.Chroma 因 cwd 不同而连接到不同的数据库，导致 BM25 缓存计数为 0
-_RAG_PERSIST_DIR = os.path.abspath(RAG_PERSIST_DIR)
-BM25_CACHE_PATH = os.path.join(_RAG_PERSIST_DIR, "bm25_cache.pkl")
+BM25_CACHE_PATH = os.path.join(RAG_PERSIST_DIR, "bm25_cache.pkl")
 
 # BM25索引内存缓存（首次构建后常驻内存，避免每次检索重建）
 _bm25_index_cache = None
@@ -33,15 +31,21 @@ def _get_embeddings():
 
 def _get_chroma_collection():
     """用PersistentClient获取collection，支持大数据量"""
-    client = chromadb.PersistentClient(path=_RAG_PERSIST_DIR)
-    return client.get_collection(name="medical_knowledge")
+    client = chromadb.PersistentClient(path=RAG_PERSIST_DIR)
+    try:
+        return client.get_collection(name="medical_knowledge")
+    except Exception:
+        raise RuntimeError(
+            f"向量库不存在，请先运行: python -m rag.ingest\n"
+            f"（路径: {RAG_PERSIST_DIR}）"
+        )
 
 
 def _vector_search(query: str, top_k: int = 20):
     """向量语义检索"""
     embeddings = _get_embeddings()
     vectorstore = Chroma(
-        persist_directory=_RAG_PERSIST_DIR,
+        persist_directory=RAG_PERSIST_DIR,
         embedding_function=embeddings,
         collection_name="medical_knowledge",
     )
@@ -57,10 +61,6 @@ def _get_bm25_index():
 
     # 构建索引
     all_docs = _load_bm25_corpus()
-    if not all_docs:
-        logger.warning("BM25语料为空，跳过BM25检索（请先运行 python -m rag.ingest 构建知识库）")
-        return None
-
     try:
         from rank_bm25 import BM25Okapi
     except ImportError:
@@ -99,12 +99,12 @@ def _rrf_merge(vector_results, bm25_results, k=60):
     doc_map = {}
 
     for rank, (doc, _) in enumerate(vector_results):
-        doc_id = id(doc)
+        doc_id = hash(doc.page_content)
         doc_scores[doc_id] = doc_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
         doc_map[doc_id] = doc
 
     for rank, (doc, _) in enumerate(bm25_results):
-        doc_id = id(doc)
+        doc_id = hash(doc.page_content)
         doc_scores[doc_id] = doc_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
         doc_map[doc_id] = doc
 
@@ -113,12 +113,12 @@ def _rrf_merge(vector_results, bm25_results, k=60):
 
 
 def _rerank(query: str, documents: list, top_k: int = 3):
-    """DashScope qwen3-rerank/gte-rerank-v2 重排序"""
+    """DashScope qwen3-rerank 重排序"""
     try:
         from dashscope import TextReRank
         doc_texts = [doc.page_content for doc in documents]
         resp = TextReRank.call(
-            model="gte-rerank-v2",  #qwen3-rerank
+            model="qwen3-rerank",
             query=query,
             documents=doc_texts,
             top_n=top_k,
@@ -190,6 +190,17 @@ def retrieve_context(query: str, use_hybrid: bool = True, use_rerank: bool = Tru
         final_docs = merged_docs[:RAG_TOP_K]
 
     return "\n\n---\n\n".join([doc.page_content for doc in final_docs])
+
+
+def prebuild_bm25_index(force: bool = False):
+    """预构建BM25索引缓存（可提前调用避免首次检索延迟）"""
+    if force:
+        global _bm25_index_cache
+        _bm25_index_cache = None
+        if os.path.exists(BM25_CACHE_PATH):
+            os.remove(BM25_CACHE_PATH)
+            logger.info("已清除旧BM25缓存，将重新构建")
+    _get_bm25_index()
 
 
 if __name__ == "__main__":

@@ -113,33 +113,28 @@ def diagnosis_node(state: dict) -> dict:
             logger.warning(f"RAG检索失败 error={e}")
             rag_context = "（未检索到相关知识）"
 
-    # 患者历史记忆
+    # 患者历史记忆（长期：语义检索 ChromaDB）
     patient_history = ""
     try:
-        from memory import recall_memory, get_recent_sessions
+        from memory import recall_memory
         memory_hits = recall_memory(state["user_input"], top_k=3)
-        recent = get_recent_sessions(n=3)
-        parts = []
         if memory_hits:
-            parts.append("患者历史咨询（相关）：\n" + "\n".join(f"- {m}" for m in memory_hits))
-        if recent:
-            recent_lines = []
-            for s in recent:
-                recent_lines.append(f"  [{s.get('time','')[:10]}] {s.get('user_input','')[:30]}... → {s.get('department','')}")
-            parts.append("最近咨询记录：\n" + "\n".join(recent_lines))
-        if parts:
-            patient_history = "【患者历史记忆（仅供参考，非本次对话内容，不要当作用户当前陈述）】\n" + "\n".join(parts) + "\n"
+            patient_history = (
+                "【患者历史记忆（仅供参考，非本次对话内容，不要当作用户当前陈述）】\n"
+                + "\n".join(f"- {m}" for m in memory_hits)
+                + "\n"
+            )
     except Exception as e:
-        logger.warning(f"记忆检索失败 error={e}")
+        logger.warning(f"长期记忆检索失败 error={e}")
 
     # 参考知识
     reference_knowledge = ""
     if rag_context:
         reference_knowledge = f"【参考知识（RAG检索结果，供参考，非诊断依据）】\n{rag_context}\n"
 
-    # 对话历史
-    conversation_history = ""
+    # 短期记忆：对话历史（由调用方控制长度）
     chat_history = state.get("chat_history", [])
+    conversation_history = ""
     if chat_history:
         history_lines = []
         for i, msg in enumerate(chat_history):

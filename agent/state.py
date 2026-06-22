@@ -13,5 +13,5 @@ class AgentState(TypedDict):
     retry_count: int
     final_response: str
     chat_history: List[str]
-    memory_context: str  # 记忆检索结果（长期+短期记忆拼接）
-    trace_id: str        # 请求唯一标识，用于日志串联
+    memory_context: str  # 长期记忆检索结果（ChromaDB 语义召回）
+    trace_id: str        # 请求唯一标识，用于日志串联吗

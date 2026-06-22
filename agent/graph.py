@@ -84,17 +84,15 @@ def format_output(state: dict) -> dict:
     else:
         final = state.get("diagnosis_result", "")
 
-    # 对话结束，保存记忆
+    # 保存长期记忆
     try:
-        from memory import save_session_summary
-        save_session_summary(
+        from memory import save_summary
+        save_summary(
             user_input=state.get("user_input", ""),
-            final_response=final,
-            department=state.get("department", ""),
-            urgency=state.get("urgency", ""),
+            response=final,
         )
     except Exception as e:
-        logger.warning(f"记忆保存失败 error={e}")
+        logger.warning(f"长期记忆保存失败 error={e}")
 
     logger.info(
         f"请求完成 final_safe={state.get('is_safe', True)}, "

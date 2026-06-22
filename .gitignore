@@ -38,7 +38,7 @@ evaluation/rag/
 
 # 数据集（体积过大）
 rag/medical_train_zh.json
-Chinese-medical-dialogue-data/
+
 
 # 会话记录（含用户隐私）
 memory/data/recent_sessions.json

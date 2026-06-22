@@ -17,6 +17,8 @@ class DashScopeEmbeddings(Embeddings):
         for i in range(0, len(texts), 10):
             batch = texts[i:i + 10]
             resp = TextEmbedding.call(model=self.model, input=batch)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Embedding API调用失败: {resp.message} (code={resp.status_code})")
             for item in resp.output["embeddings"]:
                 embeddings.append(item["embedding"])
         return embeddings
@@ -24,4 +26,6 @@ class DashScopeEmbeddings(Embeddings):
     def embed_query(self, text: str) -> list:
         from dashscope import TextEmbedding
         resp = TextEmbedding.call(model=self.model, input=[text])
+        if resp.status_code != 200:
+            raise RuntimeError(f"Embedding API调用失败: {resp.message} (code={resp.status_code})")
         return resp.output["embeddings"][0]["embedding"]
